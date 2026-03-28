@@ -31,6 +31,9 @@ adc_oneshot_unit_handle_t adc1_handle;
 adc_cali_handle_t adc1_cali_chan0_handle;
 bool do_calibration1_chan0;
 
+static bool led_blinking = false;
+static bool periodic_running = false;
+
 void GPIO_Initialation(){
 
     gpio_reset_pin(Pin_Button);
@@ -122,14 +125,36 @@ int button_pressed(int state){
 	return ret;
 }
 
+void led_blinking_start(int period_us)
+{
+    led_blinking = true;
+    if (periodic_running)
+    {
+        ESP_ERROR_CHECK(esp_timer_stop(periodic_timer));
+    }
+    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, period_us));
+    periodic_running = true;
+}
+
+void led_blinking_stop()
+{
+    led_blinking = false;
+    if (periodic_running)
+    {
+        ESP_ERROR_CHECK(esp_timer_stop(periodic_timer));
+        periodic_running = false;
+    }
+    gpio_set_level(Pin_LED, 0);
+}
+
 void app_main(void)
 {
     create_oneshot_timer();
+    create_periodic_timer();
     GPIO_Initialation();
     ADC_Initialation(ADC_Unit, Pin_Potensio);
     
-    static bool toggle_state = 0;
-    static bool LED_State = 0;
+    
     static int last_adc_time = 0;
 
     while(1)
@@ -144,10 +169,9 @@ void app_main(void)
 
         if (button_pressed(button_state))
         {
-            
+
             esp_timer_stop(oneshot_timer);
-            toggle_state = !toggle_state;
-            gpio_set_level(Pin_LED, 1);
+            led_blinking_start(500000);
             start_oneshot_timer(5000000);
         }
 
@@ -158,15 +182,19 @@ void app_main(void)
 
 static void periodic_timer_callback(void* arg)
 {
-    int64_t time_since_boot = esp_timer_get_time();
-    ESP_LOGI(TAG, "Periodic timer called, time since boot: %lld us", time_since_boot);
+    static bool level = 0;
+
+    if (led_blinking)
+    {
+        level = !level;
+        gpio_set_level(Pin_LED, level);
+    }
+
 }
 
 static void oneshot_timer_callback(void* arg)
 {
-    int64_t time_since_boot = esp_timer_get_time();
-    ESP_LOGI(TAG, "One-shot timer called, time since boot: %lld us", time_since_boot);
-    gpio_set_level(Pin_LED, 0);
+    led_blinking_stop();
 }
 
 /*---------------------------------------------------------------
